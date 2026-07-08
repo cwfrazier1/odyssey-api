@@ -1,0 +1,16 @@
+[Unit]
+Description=Odyssey Sync API (FastAPI)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=odyssey
+WorkingDirectory=/opt/odyssey-api
+EnvironmentFile=/opt/odyssey-api/.env
+ExecStart=/opt/odyssey-api/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
