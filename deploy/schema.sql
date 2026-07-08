@@ -34,3 +34,17 @@ create table if not exists sheet_versions (
   unique (sheet_id, version)
 );
 create index if not exists sheet_versions_sheet_idx on sheet_versions(sheet_id, version desc);
+
+-- Writing goals, keyed by the group OR sheet UUID they're attached to. Synced
+-- separately from bodies (they're a lightweight side-store on the client) so a
+-- body pull can't clobber them. Single-user last-writer-wins via updated_at,
+-- which the client supplies from its own clock.
+create table if not exists goals (
+  target_id   uuid primary key,
+  target      integer not null,
+  metric      text not null,
+  comparison  text not null,
+  deadline    timestamptz,
+  updated_at  timestamptz not null default now(),
+  deleted_at  timestamptz
+);

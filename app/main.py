@@ -58,6 +58,15 @@ class SheetIn(BaseModel):
     device: Optional[str] = None
 
 
+class GoalIn(BaseModel):
+    target: int
+    metric: str
+    comparison: str
+    deadline: Optional[datetime] = None
+    # Client clock, so single-user last-writer-wins is deterministic across devices.
+    updated_at: Optional[datetime] = None
+
+
 def _counts(body: str) -> tuple[int, int]:
     return (len(body.split()), len(body))
 
@@ -218,3 +227,49 @@ async def restore_version(sheet_id: str, version: int, device: Optional[str] = N
                 "values ($1,$2,$3,$4,$5,$6)",
                 sheet_id, newv, src["body"], words, chars, device or "restore")
     return {"sheet_id": sheet_id, "restored_from": version, "new_version": newv}
+
+
+# ----------------------------------------------------------------- goals sync
+@app.get("/v1/goals", dependencies=[Depends(require_auth)])
+async def get_goals():
+    async with pool.acquire() as c:
+        rows = await c.fetch(
+            "select target_id, target, metric, comparison, deadline, updated_at "
+            "from goals where deleted_at is null")
+    return {"goals": [{
+        "target_id": str(r["target_id"]),
+        "target": r["target"],
+        "metric": r["metric"],
+        "comparison": r["comparison"],
+        "deadline": r["deadline"].isoformat() if r["deadline"] else None,
+        "updated_at": r["updated_at"].isoformat(),
+    } for r in rows]}
+
+
+@app.put("/v1/goals/{target_id}", dependencies=[Depends(require_auth)])
+async def upsert_goal(target_id: str, payload: GoalIn):
+    updated = payload.updated_at or datetime.now(timezone.utc)
+    async with pool.acquire() as c:
+        row = await c.fetchrow(
+            "insert into goals (target_id, target, metric, comparison, deadline, updated_at, deleted_at) "
+            "values ($1,$2,$3,$4,$5,$6,null) "
+            "on conflict (target_id) do update set target = excluded.target, "
+            "  metric = excluded.metric, comparison = excluded.comparison, "
+            "  deadline = excluded.deadline, updated_at = excluded.updated_at, deleted_at = null "
+            "returning target_id, target, metric, comparison, deadline, updated_at",
+            target_id, payload.target, payload.metric, payload.comparison, payload.deadline, updated)
+    return {
+        "target_id": str(row["target_id"]),
+        "target": row["target"],
+        "metric": row["metric"],
+        "comparison": row["comparison"],
+        "deadline": row["deadline"].isoformat() if row["deadline"] else None,
+        "updated_at": row["updated_at"].isoformat(),
+    }
+
+
+@app.delete("/v1/goals/{target_id}", dependencies=[Depends(require_auth)])
+async def delete_goal(target_id: str):
+    async with pool.acquire() as c:
+        await c.execute("update goals set deleted_at = now() where target_id = $1", target_id)
+    return {"ok": True}
