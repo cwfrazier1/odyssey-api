@@ -49,6 +49,7 @@ async def require_auth(authorization: str = Header(default="")):
 class GroupIn(BaseModel):
     name: str = "New Group"
     position: int = 0
+    parent_id: Optional[str] = None
 
 
 class SheetIn(BaseModel):
@@ -83,7 +84,7 @@ async def health():
 async def get_library():
     async with pool.acquire() as c:
         groups = await c.fetch(
-            "select id, name, position, created_at, updated_at "
+            "select id, name, position, parent_id, created_at, updated_at "
             "from groups where deleted_at is null order by position, created_at"
         )
         sheets = await c.fetch(
@@ -106,6 +107,7 @@ async def get_library():
         "id": str(g["id"]),
         "name": g["name"],
         "position": g["position"],
+        "parent_id": str(g["parent_id"]) if g["parent_id"] else None,
         "created_at": g["created_at"].isoformat(),
         "updated_at": g["updated_at"].isoformat(),
         "sheets": by_group.get(str(g["id"]), []),
@@ -116,13 +118,15 @@ async def get_library():
 async def upsert_group(group_id: str, payload: GroupIn):
     async with pool.acquire() as c:
         row = await c.fetchrow(
-            "insert into groups (id, name, position) values ($1, $2, $3) "
+            "insert into groups (id, name, position, parent_id) values ($1, $2, $3, $4) "
             "on conflict (id) do update set name = excluded.name, "
-            "  position = excluded.position, updated_at = now(), deleted_at = null "
-            "returning id, name, position, created_at, updated_at",
-            group_id, payload.name, payload.position,
+            "  position = excluded.position, parent_id = excluded.parent_id, "
+            "  updated_at = now(), deleted_at = null "
+            "returning id, name, position, parent_id, created_at, updated_at",
+            group_id, payload.name, payload.position, payload.parent_id,
         )
     return dict(id=str(row["id"]), name=row["name"], position=row["position"],
+                parent_id=str(row["parent_id"]) if row["parent_id"] else None,
                 created_at=row["created_at"].isoformat(), updated_at=row["updated_at"].isoformat())
 
 

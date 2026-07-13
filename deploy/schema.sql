@@ -4,10 +4,13 @@ create table if not exists groups (
   id          uuid primary key default gen_random_uuid(),
   name        text not null default 'New Group',
   position    integer not null default 0,
+  parent_id   uuid,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   deleted_at  timestamptz
 );
+-- Idempotent migration for pre-existing deployments.
+alter table groups add column if not exists parent_id uuid;
 
 create table if not exists sheets (
   id          uuid primary key default gen_random_uuid(),
